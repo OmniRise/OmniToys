@@ -1,7 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import QRCodeStyling from 'qr-code-styling'
 import { ToolLayout } from '@/components/tools/ToolLayout'
-import { QrCode, Download, Copy, Upload, X, Image as ImageIcon } from 'lucide-react'
+import { Switch } from '@/components/ui/Switch'
+import {
+  QrCode, Download, Copy, Upload, X, Image as ImageIcon,
+  ChevronRight, Type, Palette, Shapes, ImagePlus, FileDown,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/utils/cn'
 
@@ -99,14 +104,133 @@ function gradientToCss(f: Fill): string {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Inline sub-components
+// Apple-style primitives
 // ─────────────────────────────────────────────────────────────
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+/** iOS Settings grouped card: header with value summary + spring-animated body */
+function SettingsSection({
+  icon: Icon,
+  title,
+  summary,
+  open,
+  onToggle,
+  children,
+}: {
+  icon: React.ElementType
+  title: string
+  summary?: React.ReactNode
+  open: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
   return (
-    <div className="space-y-3">
-      <h3 className="text-xs font-bold uppercase tracking-widest text-omni-text/40">{title}</h3>
-      {children}
+    <div className="rounded-2xl border border-omni-text/5 bg-omni-bg/30 overflow-hidden">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-omni-text/[0.03] active:bg-omni-text/[0.05] transition-colors text-left"
+      >
+        <div className="w-7 h-7 rounded-[8px] bg-omni-primary/10 text-omni-primary flex items-center justify-center shrink-0">
+          <Icon className="w-3.5 h-3.5" />
+        </div>
+        <span className="text-sm font-semibold text-omni-text shrink-0">{title}</span>
+        <span className="text-xs text-omni-text/40 truncate flex-1 text-right min-w-0">
+          {summary}
+        </span>
+        <motion.span
+          animate={{ rotate: open ? 90 : 0 }}
+          transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+          className="text-omni-text/30 shrink-0"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </motion.span>
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 34 }}
+            className="overflow-hidden"
+          >
+            <div className="px-4 pb-4 pt-3 space-y-3 border-t border-omni-text/5">
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+
+/** iOS segmented control with sliding indicator */
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  className,
+}: {
+  options: { label: string; value: T }[]
+  value: T
+  onChange: (v: T) => void
+  className?: string
+}) {
+  const groupId = useId()
+  return (
+    <div className={cn('flex bg-omni-text/5 rounded-[10px] p-0.5 gap-0.5', className)}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          onClick={() => onChange(o.value)}
+          className={cn(
+            'relative flex-1 px-2 py-1.5 text-xs font-medium rounded-lg transition-colors min-w-0',
+            value === o.value ? 'text-omni-text' : 'text-omni-text/45 hover:text-omni-text/75'
+          )}
+        >
+          {value === o.value && (
+            <motion.span
+              layoutId={`seg-${groupId}`}
+              className="absolute inset-0 bg-omni-text/10 rounded-lg shadow-sm"
+              transition={{ type: 'spring', stiffness: 500, damping: 38 }}
+            />
+          )}
+          <span className="relative z-10 truncate block">{o.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Label-left / control-right settings row */
+function Row({
+  label,
+  hint,
+  children,
+  stacked,
+}: {
+  label: string
+  hint?: string
+  children: React.ReactNode
+  stacked?: boolean
+}) {
+  if (stacked) {
+    return (
+      <div className="space-y-2">
+        <div className="flex items-baseline justify-between">
+          <span className="text-xs font-medium text-omni-text/60">{label}</span>
+          {hint && <span className="text-[10px] text-omni-text/30">{hint}</span>}
+        </div>
+        {children}
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center justify-between gap-3 py-1.5">
+      <span className="text-xs font-medium text-omni-text/60 shrink-0">{label}</span>
+      <div className="flex items-center gap-2 min-w-0 justify-end">{children}</div>
     </div>
   )
 }
@@ -121,17 +245,17 @@ function ShapeGrid({
   onChange: (v: string) => void
 }) {
   return (
-    <div className="grid grid-cols-3 gap-2">
+    <div className="grid grid-cols-3 gap-1.5">
       {options.map((opt) => (
         <button
           key={opt.value}
           type="button"
           onClick={() => onChange(opt.value)}
           className={cn(
-            'px-3 py-2.5 rounded-xl text-xs font-medium transition-all border',
+            'px-2 py-2 rounded-lg text-xs font-medium transition-all border',
             value === opt.value
-              ? 'bg-omni-primary text-white border-omni-primary shadow-lg shadow-omni-primary/20'
-              : 'bg-omni-text/5 text-omni-text/60 border-transparent hover:bg-omni-text/10'
+              ? 'bg-omni-primary text-white border-omni-primary shadow-md shadow-omni-primary/20'
+              : 'bg-omni-text/5 text-omni-text/55 border-transparent hover:bg-omni-text/10'
           )}
         >
           {opt.label}
@@ -141,88 +265,58 @@ function ShapeGrid({
   )
 }
 
-function ColorField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: string
-  onChange: (v: string) => void
-}) {
+/** Compact color/gradient picker as a settings row */
+function FillRow({ label, fill, onChange }: { label: string; fill: Fill; onChange: (f: Fill) => void }) {
   return (
-    <div className="flex items-center gap-2">
-      <span
-        className="w-9 h-9 rounded-lg border border-omni-text/10 shrink-0"
-        style={{ background: gradientToCss({ mode: 'solid', color: value, color2: value, rotation: 0 }) }}
-      />
-      <input
-        type="color"
-        value={/^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000'}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-9 h-9 rounded-lg cursor-pointer bg-transparent"
-        aria-label={label}
-      />
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="flex-1 px-3 py-2 bg-omni-bg/50 border border-omni-text/10 rounded-lg text-xs font-mono text-omni-text"
-        maxLength={7}
-        spellCheck={false}
-      />
-    </div>
-  )
-}
-
-function FillPicker({
-  label,
-  fill,
-  onChange,
-}: {
-  label: string
-  fill: Fill
-  onChange: (f: Fill) => void
-}) {
-  return (
-    <div className="space-y-2 p-3 rounded-xl border border-omni-text/5 bg-omni-bg/30">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-semibold text-omni-text/60">{label}</span>
-        <div className="flex gap-1">
-          {(['solid', 'linear', 'radial'] as FillMode[]).map((m) => (
-            <button
-              key={m}
-              type="button"
-              onClick={() => onChange({ ...fill, mode: m })}
-              className={cn(
-                'px-2 py-1 rounded-md text-[10px] font-bold uppercase transition-colors',
-                fill.mode === m
-                  ? 'bg-omni-primary text-white'
-                  : 'bg-omni-text/5 text-omni-text/40 hover:bg-omni-text/10'
-              )}
-            >
-              {m === 'solid' ? 'Solid' : m === 'linear' ? 'Lin' : 'Rad'}
-            </button>
-          ))}
+    <div className="space-y-2 rounded-xl border border-omni-text/5 bg-omni-bg/40 p-2.5">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium text-omni-text/60 flex-1 shrink-0">{label}</span>
+        <Segmented
+          options={[
+            { label: 'Solid', value: 'solid' as FillMode },
+            { label: 'Lin', value: 'linear' as FillMode },
+            { label: 'Rad', value: 'radial' as FillMode },
+          ]}
+          value={fill.mode}
+          onChange={(m) => onChange({ ...fill, mode: m })}
+          className="w-36"
+        />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <input
+            type="color"
+            value={/^#[0-9a-fA-F]{6}$/.test(fill.color) ? fill.color : '#000000'}
+            onChange={(e) => onChange({ ...fill, color: e.target.value })}
+            className="w-7 h-7 rounded-md cursor-pointer bg-transparent border border-omni-text/10"
+            aria-label={`${label} color`}
+          />
+          {fill.mode !== 'solid' && (
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(fill.color2) ? fill.color2 : '#000000'}
+              onChange={(e) => onChange({ ...fill, color2: e.target.value })}
+              className="w-7 h-7 rounded-md cursor-pointer bg-transparent border border-omni-text/10"
+              aria-label={`${label} gradient end color`}
+            />
+          )}
         </div>
       </div>
-      <ColorField label={label} value={fill.color} onChange={(c) => onChange({ ...fill, color: c })} />
       {fill.mode !== 'solid' && (
-        <>
-          <ColorField label={`${label} end`} value={fill.color2} onChange={(c) => onChange({ ...fill, color2: c })} />
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-omni-text/40 w-16 shrink-0">Rotation</span>
-            <input
-              type="range"
-              min={0}
-              max={6.28}
-              step={0.1}
-              value={fill.rotation}
-              onChange={(e) => onChange({ ...fill, rotation: parseFloat(e.target.value) })}
-              className="flex-1 accent-omni-primary"
-            />
-            <span className="text-[10px] font-mono text-omni-text/40">{fill.rotation.toFixed(1)}</span>
-          </div>
-        </>
+        <div className="flex items-center gap-2">
+          <span
+            className="w-full h-4 rounded-md border border-omni-text/10"
+            style={{ background: gradientToCss(fill) }}
+          />
+          <input
+            type="range"
+            min={0}
+            max={6.28}
+            step={0.1}
+            value={fill.rotation}
+            onChange={(e) => onChange({ ...fill, rotation: parseFloat(e.target.value) })}
+            className="w-24 accent-omni-primary shrink-0"
+            aria-label={`${label} gradient rotation`}
+          />
+        </div>
       )}
     </div>
   )
@@ -262,6 +356,18 @@ export default function QrGeneratorPage() {
   const [resolution, setResolution] = useState(512)
   const [ecc, setEcc] = useState<'L' | 'M' | 'Q' | 'H'>('Q')
   const [margin, setMargin] = useState(2)
+
+  // Collapsible sections (Apple Settings style)
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    content: true,
+    colors: false,
+    design: false,
+    logo: false,
+    export: false,
+  })
+  const toggleSection = useCallback((key: string) => {
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
+  }, [])
 
   const previewRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -446,6 +552,34 @@ export default function QrGeneratorPage() {
     return ratio < 3
   }, [bodyFill.color, bgFill.color, bgTransparent])
 
+  // ── Section summaries (visible when collapsed) ───────────
+
+  const shapeLabel = (shapes: ShapeOption[], v: string) =>
+    shapes.find((s) => s.value === v)?.label ?? v
+
+  const contentSummary = `${QR_TYPES.find((t) => t.id === qrType)?.label ?? ''} · ${
+    getQRContent().length > 20 ? `${getQRContent().slice(0, 20)}…` : getQRContent() || 'Empty'
+  }`
+
+  const colorsSummary = (
+    <span className="inline-flex items-center gap-1">
+      {[bodyFill, eyeFrameFill, eyeBallFill, bgTransparent ? null : bgFill]
+        .filter((f): f is Fill => f !== null)
+        .map((f, i) => (
+          <span
+            key={i}
+            className="w-3 h-3 rounded-full border border-white/20 inline-block"
+            style={{ background: gradientToCss(f) }}
+          />
+        ))}
+      {bgTransparent && <span className="text-[10px]">Transparent</span>}
+    </span>
+  )
+
+  const designSummary = `${shapeLabel(BODY_SHAPES, bodyShape)} · ${shapeLabel(EYE_FRAME_SHAPES, eyeFrameShape)} · ${shapeLabel(EYE_BALL_SHAPES, eyeBallShape)}`
+
+  const exportSummary = `${resolution}px · ECC ${ecc} · margin ${margin}`
+
   // ── UI ───────────────────────────────────────────────────
 
   return (
@@ -470,154 +604,159 @@ export default function QrGeneratorPage() {
         </div>
       }
     >
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 min-h-[500px]">
-        {/* Left: controls */}
-        <div className="space-y-8">
-          <Section title="Content">
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-              {QR_TYPES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setQrType(t.id)}
-                  className={cn(
-                    'px-3 py-2.5 rounded-xl text-xs font-medium transition-all border',
-                    qrType === t.id
-                      ? 'bg-omni-primary text-white border-omni-primary shadow-lg shadow-omni-primary/20'
-                      : 'bg-omni-text/5 text-omni-text/60 border-transparent hover:bg-omni-text/10'
-                  )}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+        {/* Left: collapsible settings stack */}
+        <div className="space-y-3">
+          <SettingsSection
+            icon={Type}
+            title="Content"
+            summary={contentSummary}
+            open={openSections.content}
+            onToggle={() => toggleSection('content')}
+          >
+            <Segmented
+              options={QR_TYPES.map((t) => ({ label: t.label, value: t.id }))}
+              value={qrType}
+              onChange={(v) => setQrType(v)}
+            />
 
-            {qrType === 'wifi' ? (
-              <div className="space-y-3">
+            {qrType === 'wifi' && (
+              <div className="space-y-2">
                 <input
                   value={wifiSSID}
                   onChange={(e) => setWifiSSID(e.target.value)}
                   placeholder="Network name (SSID)"
-                  className="w-full p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                  className="w-full p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
                 />
                 <input
                   type="password"
                   value={wifiPassword}
                   onChange={(e) => setWifiPassword(e.target.value)}
                   placeholder="Password"
-                  className="w-full p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                  className="w-full p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
                 />
-                <div className="flex gap-2">
-                  {(['WPA', 'WEP', 'nopass'] as const).map((enc) => (
-                    <button
-                      key={enc}
-                      type="button"
-                      onClick={() => setWifiEncryption(enc)}
-                      className={cn(
-                        'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
-                        wifiEncryption === enc
-                          ? 'bg-omni-primary text-white'
-                          : 'bg-omni-text/5 text-omni-text/60 hover:bg-omni-text/10'
-                      )}
-                    >
-                      {enc === 'nopass' ? 'None' : enc}
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  options={[
+                    { label: 'WPA/WPA2', value: 'WPA' as const },
+                    { label: 'WEP', value: 'WEP' as const },
+                    { label: 'Open', value: 'nopass' as const },
+                  ]}
+                  value={wifiEncryption}
+                  onChange={(v) => setWifiEncryption(v)}
+                />
               </div>
-            ) : qrType === 'email' ? (
-              <div className="space-y-3">
+            )}
+
+            {qrType === 'email' && (
+              <div className="space-y-2">
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="recipient@example.com"
-                  className="w-full p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                  className="w-full p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
                 />
                 <input
                   value={emailSubject}
                   onChange={(e) => setEmailSubject(e.target.value)}
                   placeholder="Subject"
-                  className="w-full p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                  className="w-full p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
                 />
                 <textarea
                   value={messageBody}
                   onChange={(e) => setMessageBody(e.target.value)}
                   placeholder="Message"
-                  className="w-full h-20 p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                  className="w-full h-16 p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm resize-none"
                 />
               </div>
-            ) : qrType === 'sms' ? (
-              <div className="space-y-3">
+            )}
+
+            {qrType === 'sms' && (
+              <div className="space-y-2">
                 <input
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Phone number"
-                  className="w-full p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                  className="w-full p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
                 />
                 <textarea
                   value={messageBody}
                   onChange={(e) => setMessageBody(e.target.value)}
                   placeholder="SMS message"
-                  className="w-full h-20 p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                  className="w-full h-16 p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm resize-none"
                 />
               </div>
-            ) : (
+            )}
+
+            {(qrType === 'url' || qrType === 'text' || qrType === 'phone') && (
               <textarea
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                className="w-full h-24 p-4 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+                className="w-full h-20 p-3 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm resize-none"
                 placeholder={qrType === 'phone' ? '+212 6 12 34 56 78' : 'Enter URL or text'}
               />
             )}
-            <p className="text-xs text-omni-text/40">{getQRContent().length} characters</p>
-            <p className={cn('text-xs', contrastWarning ? 'text-amber-400' : 'sr-only')}>
-              Low contrast between dots and background — the code may not scan reliably.
-            </p>
-          </Section>
 
-          <Section title="Colors">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] text-omni-text/40">{getQRContent().length} characters</span>
+              {contrastWarning && (
+                <span className="text-[10px] text-amber-400">
+                  Low contrast — may not scan reliably
+                </span>
+              )}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            icon={Palette}
+            title="Colors"
+            summary={colorsSummary}
+            open={openSections.colors}
+            onToggle={() => toggleSection('colors')}
+          >
             <div className="space-y-2">
-              <FillPicker label="Body" fill={bodyFill} onChange={setBodyFill} />
-              <FillPicker label="Eye Frame" fill={eyeFrameFill} onChange={setEyeFrameFill} />
-              <FillPicker label="Eye Ball" fill={eyeBallFill} onChange={setEyeBallFill} />
-              <FillPicker label="Background" fill={bgFill} onChange={setBgFill} />
+              <FillRow label="Body" fill={bodyFill} onChange={setBodyFill} />
+              <FillRow label="Eye Frame" fill={eyeFrameFill} onChange={setEyeFrameFill} />
+              <FillRow label="Eye Ball" fill={eyeBallFill} onChange={setEyeBallFill} />
+              <FillRow label="Background" fill={bgFill} onChange={setBgFill} />
             </div>
-            <label className="flex items-center gap-2 text-xs text-omni-text/60 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={bgTransparent}
-                onChange={(e) => setBgTransparent(e.target.checked)}
-                className="accent-omni-primary"
-              />
-              Transparent background
-            </label>
-          </Section>
-
-          <Section title="Customize Design">
-            <div className="space-y-4">
-              <div>
-                <p className="text-xs font-medium text-omni-text/60 mb-2">Body Shape</p>
-                <ShapeGrid options={BODY_SHAPES} value={bodyShape} onChange={setBodyShape} />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-omni-text/60 mb-2">Eye Frame Shape</p>
-                <ShapeGrid options={EYE_FRAME_SHAPES} value={eyeFrameShape} onChange={setEyeFrameShape} />
-              </div>
-              <div>
-                <p className="text-xs font-medium text-omni-text/60 mb-2">Eye Ball Shape</p>
-                <ShapeGrid options={EYE_BALL_SHAPES} value={eyeBallShape} onChange={setEyeBallShape} />
-              </div>
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-xs font-medium text-omni-text/60">Transparent background</span>
+              <Switch checked={bgTransparent} onChange={setBgTransparent} />
             </div>
-          </Section>
+          </SettingsSection>
 
-          <Section title="Logo">
+          <SettingsSection
+            icon={Shapes}
+            title="Design"
+            summary={designSummary}
+            open={openSections.design}
+            onToggle={() => toggleSection('design')}
+          >
+            <Row label="Body Shape" stacked>
+              <ShapeGrid options={BODY_SHAPES} value={bodyShape} onChange={setBodyShape} />
+            </Row>
+            <Row label="Eye Frame Shape" stacked>
+              <ShapeGrid options={EYE_FRAME_SHAPES} value={eyeFrameShape} onChange={setEyeFrameShape} />
+            </Row>
+            <Row label="Eye Ball Shape" stacked>
+              <ShapeGrid options={EYE_BALL_SHAPES} value={eyeBallShape} onChange={setEyeBallShape} />
+            </Row>
+          </SettingsSection>
+
+          <SettingsSection
+            icon={ImagePlus}
+            title="Logo"
+            summary={logoDataUrl ? 'Added' : 'None'}
+            open={openSections.logo}
+            onToggle={() => toggleSection('logo')}
+          >
             <div className="flex items-start gap-3">
               {logoDataUrl ? (
                 <div className="relative shrink-0">
                   <img
                     src={logoDataUrl}
                     alt="logo"
-                    className="w-16 h-16 rounded-xl object-contain border border-omni-text/10 bg-white/5"
+                    className="w-14 h-14 rounded-xl object-contain border border-omni-text/10 bg-white/5"
                   />
                   <button
                     type="button"
@@ -632,16 +771,16 @@ export default function QrGeneratorPage() {
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center w-16 h-16 rounded-xl border border-dashed border-omni-text/20 text-omni-text/30 hover:text-omni-primary hover:border-omni-primary/50 transition-colors shrink-0"
+                  className="flex flex-col items-center justify-center w-14 h-14 rounded-xl border border-dashed border-omni-text/20 text-omni-text/30 hover:text-omni-primary hover:border-omni-primary/50 transition-colors shrink-0"
                 >
-                  <Upload className="w-5 h-5" />
-                  <span className="text-[9px] mt-1">Upload</span>
+                  <Upload className="w-4 h-4" />
+                  <span className="text-[9px] mt-0.5">Upload</span>
                 </button>
               )}
-              <div className="flex-1 space-y-2">
+              <div className="flex-1 space-y-1.5 min-w-0">
                 <input ref={fileInputRef} type="file" accept="image/*" onChange={handleLogoInput} className="hidden" />
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-omni-text/40 w-14">Size</span>
+                  <span className="text-[10px] text-omni-text/40 w-12 shrink-0">Size</span>
                   <input
                     type="range"
                     min={0.15}
@@ -651,10 +790,12 @@ export default function QrGeneratorPage() {
                     onChange={(e) => setLogoSize(parseFloat(e.target.value))}
                     className="flex-1 accent-omni-primary"
                   />
-                  <span className="text-[10px] font-mono text-omni-text/40 w-8">{Math.round(logoSize * 100)}%</span>
+                  <span className="text-[10px] font-mono text-omni-text/40 w-8 text-right">
+                    {Math.round(logoSize * 100)}%
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-omni-text/40 w-14">Margin</span>
+                  <span className="text-[10px] text-omni-text/40 w-12 shrink-0">Margin</span>
                   <input
                     type="range"
                     min={0}
@@ -664,111 +805,93 @@ export default function QrGeneratorPage() {
                     onChange={(e) => setLogoMargin(parseInt(e.target.value))}
                     className="flex-1 accent-omni-primary"
                   />
-                  <span className="text-[10px] font-mono text-omni-text/40 w-8">{logoMargin}px</span>
+                  <span className="text-[10px] font-mono text-omni-text/40 w-8 text-right">{logoMargin}px</span>
                 </div>
-                <label className="flex items-center gap-2 text-[10px] text-omni-text/60 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={hideDotsBehindLogo}
-                    onChange={(e) => setHideDotsBehindLogo(e.target.checked)}
-                    className="accent-omni-primary"
-                  />
-                  Clear dots behind logo
-                </label>
               </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-omni-text/60">Clear dots behind logo</span>
+              <Switch checked={hideDotsBehindLogo} onChange={setHideDotsBehindLogo} />
             </div>
             <p className="text-[10px] text-omni-text/30">
               PNG, JPG, SVG up to 2MB. Use error correction Q or H for reliable scanning with a logo.
             </p>
-          </Section>
+          </SettingsSection>
 
-          <Section title="Resolution">
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-              {RESOLUTIONS.map((r) => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => setResolution(r)}
-                  className={cn(
-                    'px-2 py-2 rounded-lg text-xs font-mono font-medium transition-all border',
-                    resolution === r
-                      ? 'bg-omni-primary text-white border-omni-primary'
-                      : 'bg-omni-text/5 text-omni-text/60 border-transparent hover:bg-omni-text/10'
-                  )}
-                >
-                  {r}px
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-omni-text/40">
-              All exports are square (1:1). SVG is vector and scales infinitely.
-            </p>
-          </Section>
-
-          <Section title="Error Correction">
-            <div className="grid grid-cols-4 gap-2">
-              {ECC_LEVELS.map((l) => (
-                <button
-                  key={l.value}
-                  type="button"
-                  title={l.hint}
-                  onClick={() => setEcc(l.value)}
-                  className={cn(
-                    'px-2 py-2 rounded-lg text-xs font-bold transition-all border',
-                    ecc === l.value
-                      ? 'bg-omni-primary text-white border-omni-primary'
-                      : 'bg-omni-text/5 text-omni-text/60 border-transparent hover:bg-omni-text/10'
-                  )}
-                >
-                  {l.value}
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-omni-text/40">{ECC_LEVELS.find((l) => l.value === ecc)?.hint}</p>
-          </Section>
-
-          <Section title="Quiet Zone">
-            <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min={0}
-                max={8}
-                step={1}
-                value={margin}
-                onChange={(e) => setMargin(parseInt(e.target.value))}
-                className="flex-1 accent-omni-primary"
+          <SettingsSection
+            icon={FileDown}
+            title="Export"
+            summary={exportSummary}
+            open={openSections.export}
+            onToggle={() => toggleSection('export')}
+          >
+            <Row label="Resolution" hint="1:1 square · SVG is vector" stacked>
+              <div className="grid grid-cols-6 gap-1.5">
+                {RESOLUTIONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setResolution(r)}
+                    className={cn(
+                      'py-2 rounded-lg text-[11px] font-mono font-medium transition-all border',
+                      resolution === r
+                        ? 'bg-omni-primary text-white border-omni-primary shadow-md shadow-omni-primary/20'
+                        : 'bg-omni-text/5 text-omni-text/55 border-transparent hover:bg-omni-text/10'
+                    )}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </Row>
+            <Row label="Error Correction" hint={ECC_LEVELS.find((l) => l.value === ecc)?.hint} stacked>
+              <Segmented
+                options={ECC_LEVELS.map((l) => ({ label: l.label, value: l.value }))}
+                value={ecc}
+                onChange={(v) => setEcc(v)}
               />
-              <span className="text-xs font-mono text-omni-text/60 w-8">{margin}</span>
-            </div>
-            <p className="text-[10px] text-omni-text/40">
-              Border around the code. 4+ is safest for scanning; 0 looks cleanest on screen.
-            </p>
-          </Section>
+            </Row>
+            <Row label="Quiet Zone" hint="4+ safest for print · 0 cleanest on screen" stacked>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={8}
+                  step={1}
+                  value={margin}
+                  onChange={(e) => setMargin(parseInt(e.target.value))}
+                  className="flex-1 accent-omni-primary"
+                />
+                <span className="text-xs font-mono text-omni-text/60 w-4 text-right">{margin}</span>
+              </div>
+            </Row>
+          </SettingsSection>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-1">
             <button
               onClick={() => exportQR('png')}
-              className="flex-1 py-3 bg-omni-primary text-white rounded-xl font-semibold hover:bg-omni-primary-hover transition-colors"
+              className="flex-1 py-3 bg-omni-primary text-white rounded-xl font-semibold hover:bg-omni-primary-hover transition-colors active:scale-[0.98]"
             >
               Download PNG
             </button>
             <button
               onClick={() => exportQR('svg')}
-              className="flex-1 py-3 bg-omni-text/10 text-omni-text rounded-xl font-semibold hover:bg-omni-text/20 transition-colors"
+              className="flex-1 py-3 bg-omni-text/10 text-omni-text rounded-xl font-semibold hover:bg-omni-text/20 transition-colors active:scale-[0.98]"
             >
               Download SVG (vector)
             </button>
           </div>
         </div>
 
-        {/* Right: live preview */}
-        <div className="flex flex-col items-center gap-4">
+        {/* Right: sticky live preview */}
+        <div className="flex flex-col items-center gap-4 lg:sticky lg:top-6">
           <div className="p-8 glass-card rounded-[32px] w-full flex justify-center">
             <div
               ref={previewRef}
               className={cn(
                 'w-[320px] h-[320px] [&_svg]:w-full [&_svg]:h-full overflow-hidden rounded-xl',
-                bgTransparent && '[background-image:linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%),linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%)] [background-size:16px_16px] [background-position:0_0,8px_8px]'
+                bgTransparent &&
+                  '[background-image:linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%),linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%)] [background-size:16px_16px] [background-position:0_0,8px_8px]'
               )}
             />
           </div>
@@ -778,13 +901,13 @@ export default function QrGeneratorPage() {
           <div className="flex gap-2">
             <button
               onClick={() => exportQR('png')}
-              className="flex items-center gap-2 px-4 py-2 bg-omni-text/10 rounded-lg text-sm hover:bg-omni-text/20"
+              className="flex items-center gap-2 px-4 py-2 bg-omni-text/10 rounded-lg text-sm hover:bg-omni-text/20 active:scale-[0.98] transition-transform"
             >
               <Download className="w-4 h-4" /> PNG
             </button>
             <button
               onClick={() => exportQR('svg')}
-              className="flex items-center gap-2 px-4 py-2 bg-omni-text/10 rounded-lg text-sm hover:bg-omni-text/20"
+              className="flex items-center gap-2 px-4 py-2 bg-omni-text/10 rounded-lg text-sm hover:bg-omni-text/20 active:scale-[0.98] transition-transform"
             >
               <Download className="w-4 h-4" /> SVG
             </button>
