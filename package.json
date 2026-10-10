@@ -41,6 +41,7 @@
     "match-sorter": "^8.2.0",
     "onnxruntime-web": "^1.24.2",
     "prismjs": "^1.30.0",
+    "qr-code-styling": "^1.9.2",
     "qrcode": "^1.5.4",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
