@@ -12,6 +12,10 @@
     {
       "source": "/omniflow/:match*",
       "destination": "https://omniflow-two.vercel.app/:match*"
+    },
+    {
+      "source": "/((?!omniflow).*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
