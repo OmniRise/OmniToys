@@ -46,7 +46,7 @@ export function Sidebar() {
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         {/* Synthetic Noise & Mesh Gradient Background */}
-        <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay" style={{ backgroundImage: 'url("https://grainy-gradients.vercel.app/noise.svg")' }} />
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none mix-blend-overlay noise-overlay-static" />
         <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-omni-primary/5 via-transparent to-transparent pointer-events-none" />
 
         <div className="flex flex-col h-full p-6 relative z-10">

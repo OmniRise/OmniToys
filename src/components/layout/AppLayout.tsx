@@ -114,7 +114,7 @@ export function AppLayout() {
       </main>
       
       {/* Subtle Noise Texture Overlay */}
-      <div className="fixed inset-0 pointer-events-none z-50 opacity-[0.015] contrast-150 brightness-150 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] mix-blend-overlay" />
+      <div className="fixed inset-0 pointer-events-none z-50 opacity-[0.015] contrast-150 brightness-150 noise-overlay-static mix-blend-overlay" />
 
       {/* Global Tool Search Modal */}
       <ToolSearchModal

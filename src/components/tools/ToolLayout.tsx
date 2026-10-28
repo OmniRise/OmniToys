@@ -108,6 +108,7 @@ export function ToolLayout({ title, description, icon, children, actions, toolId
         </div>
         
         <div className="flex items-center gap-3 flex-wrap">
+           <div className="flex items-center gap-3 shrink-0 max-w-full">
            {actions}
            {!hideActions && toolId && (
              <>
@@ -132,6 +133,7 @@ export function ToolLayout({ title, description, icon, children, actions, toolId
                </button>
              </>
            )}
+           </div>
         </div>
       </header>
 

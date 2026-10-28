@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import QRCodeStyling from 'qr-code-styling'
+import bwipjs from 'bwip-js'
 import { ToolLayout } from '@/components/tools/ToolLayout'
 import { Switch } from '@/components/ui/Switch'
 import {
   QrCode, Download, Copy, Upload, X, Image as ImageIcon,
   ChevronRight, Type, Palette, Shapes, ImagePlus, FileDown,
+  Barcode as BarcodeIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/utils/cn'
@@ -63,6 +65,55 @@ const ECC_LEVELS: { label: string; hint: string; value: 'L' | 'M' | 'Q' | 'H' }[
   { label: 'Q', hint: 'Dense — 25% recoverable', value: 'Q' },
   { label: 'H', hint: 'Best with logos — 30% recoverable', value: 'H' },
 ]
+
+// ─────────────────────────────────────────────────────────────
+// Barcode mode (bwip-js)
+// ─────────────────────────────────────────────────────────────
+
+type Mode = 'qr' | 'barcode'
+
+type BcFormat = {
+  id: string
+  label: string
+  group: 'Matrix' | 'Linear'
+  hint: string
+  placeholder: string
+  validate?: (v: string) => string | null
+}
+
+const BC_FORMATS: BcFormat[] = [
+  { id: 'datamatrix', label: 'DataMatrix', group: 'Matrix', hint: '2D · small parts, logistics', placeholder: 'Any text' },
+  { id: 'azteccode', label: 'Aztec', group: 'Matrix', hint: '2D · tickets, boarding passes', placeholder: 'Any text' },
+  { id: 'pdf417', label: 'PDF417', group: 'Matrix', hint: '2D stacked · IDs, documents', placeholder: 'Any text' },
+  { id: 'code128', label: 'Code 128', group: 'Linear', hint: 'General purpose · any ASCII', placeholder: 'Any text' },
+  { id: 'code39', label: 'Code 39', group: 'Linear', hint: 'A-Z 0-9 and - . $ / + % space', placeholder: 'ABC-1234', validate: (v) => /^[A-Z0-9\-.$/+%\s]*$/i.test(v) ? null : 'Letters, digits and - . $ / + % only' },
+  { id: 'ean13', label: 'EAN-13', group: 'Linear', hint: 'Retail · check digit auto', placeholder: '590123412345', validate: (v) => /^\d{12,13}$/.test(v) ? null : '12 digits (13th computed)' },
+  { id: 'ean8', label: 'EAN-8', group: 'Linear', hint: 'Small retail · check digit auto', placeholder: '9638507', validate: (v) => /^\d{7,8}$/.test(v) ? null : '7 digits (8th computed)' },
+  { id: 'upca', label: 'UPC-A', group: 'Linear', hint: 'North America · check digit auto', placeholder: '03600029145', validate: (v) => /^\d{11,12}$/.test(v) ? null : '11 digits (12th computed)' },
+  { id: 'upce', label: 'UPC-E', group: 'Linear', hint: 'Compressed UPC', placeholder: '01234565', validate: (v) => /^\d{6,8}$/.test(v) ? null : '6 to 8 digits' },
+  { id: 'itf14', label: 'ITF-14', group: 'Linear', hint: 'Shipping containers · check digit auto', placeholder: '1234567890123', validate: (v) => /^\d{13,14}$/.test(v) ? null : '13 digits (14th computed)' },
+  { id: 'i2of5', label: 'Interleaved 2of5', group: 'Linear', hint: 'Warehouse · pairs of digits', placeholder: '12345670', validate: (v) => /^\d+$/.test(v) && v.length % 2 === 0 ? null : 'Even number of digits' },
+  { id: 'codabar', label: 'Codabar', group: 'Linear', hint: 'Digits wrapped in A-D start/stop', placeholder: 'A1234567890B', validate: (v) => /^[A-Da-d][0-9\-$:./+]*[A-Da-d]$/.test(v) ? null : 'Digits wrapped in A-D start/stop' },
+]
+
+/** bwip-js expects bare hex without '#' */
+const bareHex = (c: string) => c.replace('#', '')
+
+function hexLuminance(hex: string): number {
+  const c = hex.replace('#', '')
+  if (c.length !== 6) return 0.5
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const v = parseInt(c.slice(i, i + 2), 16) / 255
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+}
+
+function contrastRatio(a: string, b: string): number {
+  const la = hexLuminance(a)
+  const lb = hexLuminance(b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}
 
 type Fill = { mode: FillMode; color: string; color2: string; rotation: number }
 
@@ -357,6 +408,19 @@ export default function QrGeneratorPage() {
   const [ecc, setEcc] = useState<'L' | 'M' | 'Q' | 'H'>('Q')
   const [margin, setMargin] = useState(2)
 
+  // Barcode mode
+  const [mode, setMode] = useState<Mode>('qr')
+  const [bcFormatId, setBcFormatId] = useState('code128')
+  const [bcText, setBcText] = useState('OmniToys-2026')
+  const [bcBarColor, setBcBarColor] = useState('#000000')
+  const [bcTextColor, setBcTextColor] = useState('#000000')
+  const [bcBgColor, setBcBgColor] = useState('#ffffff')
+  const [bcTransparent, setBcTransparent] = useState(false)
+  const [bcShowText, setBcShowText] = useState(true)
+  const [bcModuleSize, setBcModuleSize] = useState(3)
+  const [bcPadding, setBcPadding] = useState(8)
+  const [bcError, setBcError] = useState<string | null>(null)
+
   // Collapsible sections (Apple Settings style)
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     content: true,
@@ -364,12 +428,16 @@ export default function QrGeneratorPage() {
     design: false,
     logo: false,
     export: false,
+    bcContent: true,
+    bcStyle: false,
+    bcExport: false,
   })
   const toggleSection = useCallback((key: string) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
   }, [])
 
   const previewRef = useRef<HTMLDivElement>(null)
+  const bcPreviewRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const qrInstanceRef = useRef<QRCodeStyling | null>(null)
 
@@ -440,8 +508,10 @@ export default function QrGeneratorPage() {
     if (!content.trim()) return
 
     try {
-      if (!qrInstanceRef.current) {
+      // Re-append if the container was unmounted by a mode switch (SVG lives in the DOM)
+      if (!qrInstanceRef.current || !container.querySelector('svg')) {
         qrInstanceRef.current = new QRCodeStyling(getOptions())
+        container.innerHTML = ''
         qrInstanceRef.current.append(container)
       } else {
         qrInstanceRef.current.update(getOptions())
@@ -449,7 +519,7 @@ export default function QrGeneratorPage() {
     } catch (err) {
       console.error('[QR Generator] preview update failed:', err)
     }
-  }, [getOptions, getQRContent])
+  }, [getOptions, getQRContent, mode])
 
   // ── Logo upload ──────────────────────────────────────────
 
@@ -534,23 +604,161 @@ export default function QrGeneratorPage() {
     }
   }, [getQRContent, getOptions])
 
+  // ── Barcode mode (bwip-js) ───────────────────────────────
+
+  const bcFmt = useMemo(
+    () => BC_FORMATS.find((f) => f.id === bcFormatId) ?? BC_FORMATS[0],
+    [bcFormatId]
+  )
+  const bcValidationError = useMemo(
+    () => (bcText.trim() ? bcFmt.validate?.(bcText) ?? null : null),
+    [bcText, bcFmt]
+  )
+
+  const buildBarcodeSvg = useCallback((): string => {
+    return bwipjs.toSVG({
+      bcid: bcFmt.id,
+      text: bcText,
+      scale: bcModuleSize,
+      includetext: bcShowText,
+      rotate: 'N',
+      barcolor: bareHex(bcBarColor),
+      paddingwidth: bcPadding,
+      paddingheight: bcPadding,
+      ...(bcShowText ? { textcolor: bareHex(bcTextColor) } : {}),
+      ...(bcTransparent ? {} : { backgroundcolor: bareHex(bcBgColor) }),
+    })
+  }, [bcFmt, bcText, bcModuleSize, bcShowText, bcBarColor, bcTextColor, bcTransparent, bcBgColor, bcPadding])
+
+  // Barcode live preview
+  useEffect(() => {
+    if (mode !== 'barcode') return
+    const el = bcPreviewRef.current
+    if (!el) return
+    if (!bcText.trim() || bcValidationError) {
+      el.innerHTML = ''
+      setBcError(!bcText.trim() ? null : bcValidationError)
+      return
+    }
+    try {
+      el.innerHTML = buildBarcodeSvg()
+      const svgEl = el.querySelector('svg')
+      if (svgEl) {
+        svgEl.setAttribute('width', '100%')
+        svgEl.removeAttribute('height')
+        svgEl.style.display = 'block'
+      }
+      setBcError(null)
+    } catch (err) {
+      el.innerHTML = ''
+      setBcError(err instanceof Error ? err.message.replace(/^Error:\s*/, '') : 'Barcode generation failed')
+    }
+  }, [mode, bcText, bcValidationError, buildBarcodeSvg])
+
+  const downloadBlob = (blob: Blob, name: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = name
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  /** SVG blob → loaded Image (naturalWidth/Height carry the format's aspect ratio) */
+  const svgToImage = async (svg: string): Promise<HTMLImageElement> => {
+    const blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const img = new Image()
+    await new Promise<void>((resolve, reject) => {
+      img.onload = () => resolve()
+      img.onerror = () => reject(new Error('svg load failed'))
+      img.src = url
+    })
+    URL.revokeObjectURL(url)
+    return img
+  }
+
+  const exportBarcode = useCallback(
+    async (extension: 'png' | 'svg') => {
+      try {
+        if (!bcText.trim() || bcValidationError) {
+          toast.error(bcValidationError ?? 'Enter some content first')
+          return
+        }
+        const svg = buildBarcodeSvg()
+        if (extension === 'svg') {
+          downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }), `omnitoys-barcode-${bcFmt.id}.svg`)
+          toast.success('SVG downloaded (vector)')
+          return
+        }
+        const img = await svgToImage(svg)
+        const w = resolution
+        const h = Math.max(1, Math.round((resolution * img.naturalHeight) / img.naturalWidth))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) throw new Error('no 2d context')
+        ctx.drawImage(img, 0, 0, w, h)
+        const pngBlob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), 'image/png'))
+        downloadBlob(pngBlob, `omnitoys-barcode-${bcFmt.id}-${w}px.png`)
+        toast.success(`PNG downloaded at ${w}x${h}px`)
+      } catch {
+        toast.error(`Failed to download ${extension.toUpperCase()}`)
+      }
+    },
+    [bcText, bcValidationError, bcFmt, buildBarcodeSvg, resolution]
+  )
+
+  const copyBarcode = useCallback(async () => {
+    try {
+      if (!bcText.trim() || bcValidationError) {
+        toast.error(bcValidationError ?? 'Enter some content first')
+        return
+      }
+      const img = await svgToImage(buildBarcodeSvg())
+      const w = 2048
+      const h = Math.max(1, Math.round((w * img.naturalHeight) / img.naturalWidth))
+      const canvas = document.createElement('canvas')
+      canvas.width = w
+      canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('no 2d context')
+      ctx.drawImage(img, 0, 0, w, h)
+      const pngBlob: Blob = await new Promise((res) => canvas.toBlob((b) => res(b!), 'image/png'))
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })])
+      toast.success('PNG copied to clipboard!')
+    } catch {
+      toast.error('Failed to copy (browser may not support clipboard images)')
+    }
+  }, [bcText, bcValidationError, buildBarcodeSvg])
+
+  // ── Mode-aware header actions ────────────────────────────
+
+  const handleExport = useCallback(
+    (extension: 'png' | 'svg') => {
+      if (mode === 'qr') exportQR(extension)
+      else exportBarcode(extension)
+    },
+    [mode, exportQR, exportBarcode]
+  )
+
+  const handleCopy = useCallback(() => {
+    if (mode === 'qr') copyToClipboard()
+    else copyBarcode()
+  }, [mode, copyToClipboard, copyBarcode])
+
   // ── Contrast warning ─────────────────────────────────────
 
-  const contrastWarning = useMemo(() => {
-    const hexToLum = (hex: string): number => {
-      const c = hex.replace('#', '')
-      if (c.length !== 6) return 0.5
-      const [r, g, b] = [0, 2, 4].map((i) => {
-        const v = parseInt(c.slice(i, i + 2), 16) / 255
-        return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
-      })
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b
-    }
-    const fgLum = hexToLum(bodyFill.color)
-    const bgLum = hexToLum(bgTransparent ? '#ffffff' : bgFill.color)
-    const ratio = (Math.max(fgLum, bgLum) + 0.05) / (Math.min(fgLum, bgLum) + 0.05)
-    return ratio < 3
-  }, [bodyFill.color, bgFill.color, bgTransparent])
+  const contrastWarning = useMemo(
+    () => contrastRatio(bodyFill.color, bgTransparent ? '#ffffff' : bgFill.color) < 3,
+    [bodyFill.color, bgFill.color, bgTransparent]
+  )
+
+  const bcContrastWarning = useMemo(
+    () => contrastRatio(bcBarColor, bcTransparent ? '#ffffff' : bcBgColor) < 3,
+    [bcBarColor, bcBgColor, bcTransparent]
+  )
 
   // ── Section summaries (visible when collapsed) ───────────
 
@@ -580,23 +788,29 @@ export default function QrGeneratorPage() {
 
   const exportSummary = `${resolution}px · ECC ${ecc} · margin ${margin}`
 
+  const bcContentSummary = `${bcFmt.label} · ${
+    bcText.length > 16 ? `${bcText.slice(0, 16)}…` : bcText || 'Empty'
+  }`
+  const bcStyleSummary = bcShowText ? 'Bars + text' : 'Bars only'
+  const bcExportSummary = `${resolution}px · module ${bcModuleSize} · quiet ${bcPadding}`
+
   // ── UI ───────────────────────────────────────────────────
 
   return (
     <ToolLayout
-      title="QR Code Generator"
-      description="Fully styled QR codes — custom body & eye shapes, gradients, center logo, transparent background, up to 4096px 1:1 exports."
+      title="QR & Barcode Generator"
+      description="Styled QR codes — shapes, gradients, logos — plus scanner-safe barcodes: DataMatrix, Aztec, PDF417, Code 128, EAN, UPC and more. Up to 4096px exports."
       icon={<QrCode className="w-8 h-8" />}
       actions={
         <div className="flex gap-2">
           <button
-            onClick={copyToClipboard}
+            onClick={handleCopy}
             className="flex items-center gap-2 px-3 py-1.5 bg-omni-primary/10 text-omni-primary hover:bg-omni-primary/20 rounded-lg transition-colors font-medium text-sm"
           >
             <Copy className="w-4 h-4" /> Copy
           </button>
           <button
-            onClick={() => exportQR('png')}
+            onClick={() => handleExport('png')}
             className="flex items-center gap-2 px-3 py-1.5 bg-omni-text/10 text-omni-text hover:bg-omni-text/20 rounded-lg transition-colors font-medium text-sm"
           >
             <Download className="w-4 h-4" /> PNG
@@ -607,6 +821,17 @@ export default function QrGeneratorPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
         {/* Left: collapsible settings stack */}
         <div className="space-y-3">
+          <Segmented
+            options={[
+              { label: 'QR Code', value: 'qr' as Mode },
+              { label: 'Barcode', value: 'barcode' as Mode },
+            ]}
+            value={mode}
+            onChange={(v) => setMode(v)}
+            className="w-full sm:max-w-[280px]"
+          />
+          {mode === 'qr' && (
+          <>
           <SettingsSection
             icon={Type}
             title="Content"
@@ -869,44 +1094,238 @@ export default function QrGeneratorPage() {
 
           <div className="flex gap-3 pt-1">
             <button
-              onClick={() => exportQR('png')}
+              onClick={() => handleExport('png')}
               className="flex-1 py-3 bg-omni-primary text-white rounded-xl font-semibold hover:bg-omni-primary-hover transition-colors active:scale-[0.98]"
             >
               Download PNG
             </button>
             <button
-              onClick={() => exportQR('svg')}
+              onClick={() => handleExport('svg')}
               className="flex-1 py-3 bg-omni-text/10 text-omni-text rounded-xl font-semibold hover:bg-omni-text/20 transition-colors active:scale-[0.98]"
             >
               Download SVG (vector)
             </button>
           </div>
+          </>
+          )}
+
+          {mode === 'barcode' && (
+          <>
+          <SettingsSection
+            icon={BarcodeIcon}
+            title="Content"
+            summary={bcContentSummary}
+            open={openSections.bcContent}
+            onToggle={() => toggleSection('bcContent')}
+          >
+            <div className="space-y-3">
+              {(['Matrix', 'Linear'] as const).map((group) => (
+                <div key={group} className="space-y-1.5">
+                  <span className="text-[10px] uppercase tracking-wider text-omni-text/30">{group}</span>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {BC_FORMATS.filter((f) => f.group === group).map((f) => (
+                      <button
+                        key={f.id}
+                        type="button"
+                        onClick={() => setBcFormatId(f.id)}
+                        className={cn(
+                          'px-2 py-2 rounded-lg text-[11px] font-medium transition-all border',
+                          bcFormatId === f.id
+                            ? 'bg-omni-primary text-white border-omni-primary shadow-md shadow-omni-primary/20'
+                            : 'bg-omni-text/5 text-omni-text/55 border-transparent hover:bg-omni-text/10'
+                        )}
+                      >
+                        {f.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <input
+              value={bcText}
+              onChange={(e) => setBcText(e.target.value)}
+              placeholder={bcFmt.placeholder}
+              className="w-full p-2.5 bg-omni-bg/50 border border-omni-text/10 rounded-xl text-omni-text text-sm"
+            />
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[10px] text-omni-text/40">{bcFmt.hint}</span>
+              {bcValidationError && (
+                <span className="text-[10px] text-amber-400 text-right">{bcValidationError}</span>
+              )}
+            </div>
+          </SettingsSection>
+
+          <SettingsSection
+            icon={Palette}
+            title="Style"
+            summary={bcStyleSummary}
+            open={openSections.bcStyle}
+            onToggle={() => toggleSection('bcStyle')}
+          >
+            <div className="flex items-center justify-between gap-3 py-1.5">
+              <span className="text-xs font-medium text-omni-text/60 shrink-0">Bar color</span>
+              <input
+                type="color"
+                value={bcBarColor}
+                onChange={(e) => setBcBarColor(e.target.value)}
+                className="w-7 h-7 rounded-md cursor-pointer bg-transparent border border-omni-text/10"
+                aria-label="Bar color"
+              />
+            </div>
+            {bcShowText && (
+              <div className="flex items-center justify-between gap-3 py-1.5">
+                <span className="text-xs font-medium text-omni-text/60 shrink-0">Text color</span>
+                <input
+                  type="color"
+                  value={bcTextColor}
+                  onChange={(e) => setBcTextColor(e.target.value)}
+                  className="w-7 h-7 rounded-md cursor-pointer bg-transparent border border-omni-text/10"
+                  aria-label="Text color"
+                />
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-3 py-1.5">
+              <span className="text-xs font-medium text-omni-text/60 shrink-0">Background</span>
+              <input
+                type="color"
+                value={bcBgColor}
+                onChange={(e) => setBcBgColor(e.target.value)}
+                className="w-7 h-7 rounded-md cursor-pointer bg-transparent border border-omni-text/10"
+                aria-label="Background color"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-omni-text/60">Transparent background</span>
+              <Switch checked={bcTransparent} onChange={setBcTransparent} />
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-omni-text/60">Human-readable text</span>
+              <Switch checked={bcShowText} onChange={setBcShowText} />
+            </div>
+            <Row label="Module size" hint="Bar / cell thickness" stacked>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={2}
+                  max={6}
+                  step={1}
+                  value={bcModuleSize}
+                  onChange={(e) => setBcModuleSize(parseInt(e.target.value))}
+                  className="flex-1 accent-omni-primary"
+                />
+                <span className="text-xs font-mono text-omni-text/60 w-4 text-right">{bcModuleSize}</span>
+              </div>
+            </Row>
+            <Row label="Quiet Zone" hint="2+ safest for scanning" stacked>
+              <div className="flex items-center gap-3">
+                <input
+                  type="range"
+                  min={0}
+                  max={16}
+                  step={1}
+                  value={bcPadding}
+                  onChange={(e) => setBcPadding(parseInt(e.target.value))}
+                  className="flex-1 accent-omni-primary"
+                />
+                <span className="text-xs font-mono text-omni-text/60 w-4 text-right">{bcPadding}</span>
+              </div>
+            </Row>
+            {bcContrastWarning && (
+              <p className="text-[10px] text-amber-400">Low contrast — may not scan reliably</p>
+            )}
+            <p className="text-[10px] text-omni-text/30">
+              Shapes and logos are skipped on purpose — linear barcodes must stay scanner-safe. Colors work on every format above.
+            </p>
+          </SettingsSection>
+
+          <SettingsSection
+            icon={FileDown}
+            title="Export"
+            summary={bcExportSummary}
+            open={openSections.bcExport}
+            onToggle={() => toggleSection('bcExport')}
+          >
+            <Row label="Width" hint="Height adapts to the format's aspect ratio" stacked>
+              <div className="grid grid-cols-6 gap-1.5">
+                {RESOLUTIONS.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setResolution(r)}
+                    className={cn(
+                      'py-2 rounded-lg text-[11px] font-mono font-medium transition-all border',
+                      resolution === r
+                        ? 'bg-omni-primary text-white border-omni-primary shadow-md shadow-omni-primary/20'
+                        : 'bg-omni-text/5 text-omni-text/55 border-transparent hover:bg-omni-text/10'
+                    )}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </Row>
+          </SettingsSection>
+
+          <div className="flex gap-3 pt-1">
+            <button
+              onClick={() => exportBarcode('png')}
+              className="flex-1 py-3 bg-omni-primary text-white rounded-xl font-semibold hover:bg-omni-primary-hover transition-colors active:scale-[0.98]"
+            >
+              Download PNG
+            </button>
+            <button
+              onClick={() => exportBarcode('svg')}
+              className="flex-1 py-3 bg-omni-text/10 text-omni-text rounded-xl font-semibold hover:bg-omni-text/20 transition-colors active:scale-[0.98]"
+            >
+              Download SVG (vector)
+            </button>
+          </div>
+          </>
+          )}
         </div>
 
         {/* Right: sticky live preview */}
         <div className="flex flex-col items-center gap-4 lg:sticky lg:top-6">
           <div className="p-8 glass-card rounded-[32px] w-full flex justify-center">
-            <div
-              ref={previewRef}
-              className={cn(
-                'w-[320px] h-[320px] [&_svg]:w-full [&_svg]:h-full overflow-hidden rounded-xl',
-                bgTransparent &&
-                  '[background-image:linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%),linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%)] [background-size:16px_16px] [background-position:0_0,8px_8px]'
-              )}
-            />
+            {mode === 'qr' ? (
+              <div
+                key="qr-preview"
+                ref={previewRef}
+                className={cn(
+                  'w-[320px] h-[320px] [&_svg]:w-full [&_svg]:h-full overflow-hidden rounded-xl',
+                  bgTransparent &&
+                    '[background-image:linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%),linear-gradient(45deg,#e5e7eb_25%,transparent_25%,transparent_75%,#e5e7eb_75%)] [background-size:16px_16px] [background-position:0_0,8px_8px]'
+                )}
+              />
+            ) : (
+              <div
+                key="bc-preview"
+                className="w-full max-w-[320px] min-h-[320px] flex flex-col items-center justify-center gap-3"
+              >
+                {/* Always mounted — the render effect needs a stable container */}
+                <div
+                  ref={bcPreviewRef}
+                  className={cn('w-full [&_svg]:w-full [&_svg]:h-auto', bcError && 'hidden')}
+                />
+                {bcError && (
+                  <p className="text-sm text-red-400 text-center px-2 break-words">{bcError}</p>
+                )}
+              </div>
+            )}
           </div>
           <div className="flex gap-2 items-center text-[10px] text-omni-text/30">
             <ImageIcon className="w-3 h-3" /> Live preview — scan-test before printing
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => exportQR('png')}
+              onClick={() => handleExport('png')}
               className="flex items-center gap-2 px-4 py-2 bg-omni-text/10 rounded-lg text-sm hover:bg-omni-text/20 active:scale-[0.98] transition-transform"
             >
               <Download className="w-4 h-4" /> PNG
             </button>
             <button
-              onClick={() => exportQR('svg')}
+              onClick={() => handleExport('svg')}
               className="flex items-center gap-2 px-4 py-2 bg-omni-text/10 rounded-lg text-sm hover:bg-omni-text/20 active:scale-[0.98] transition-transform"
             >
               <Download className="w-4 h-4" /> SVG

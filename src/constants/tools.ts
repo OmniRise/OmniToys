@@ -90,7 +90,7 @@ export const ALL_TOOLS: Tool[] = [
   { id: 'base64', to: '/tools/base64', title: 'Base64 Encoder/Decoder', description: 'Strings and images', icon: createIcon(Shield), category: 'Security', isNew: true },
   { id: 'jwt-inspector', to: '/tools/jwt-inspector', title: 'JWT Inspector', description: 'Decode tokens locally', icon: createIcon(Lock), category: 'Security', isNew: true },
   { id: 'password-gen', to: '/tools/password-gen', title: 'Password Shield', description: 'Cryptographic password generator', icon: createIcon(Lock), category: 'Security', isNew: true },
-  { id: 'qr-generator', to: '/tools/qr-generator', title: 'QR Code Generator', description: 'URLs, Wi-Fi, V-Cards', icon: createIcon(QrCode), category: 'Security', isNew: true },
+  { id: 'qr-generator', to: '/tools/qr-generator', title: 'QR & Barcode Generator', description: 'Styled QR + EAN/UPC/Code128', icon: createIcon(QrCode), category: 'Security', isNew: true },
   { id: 'pomodoro', to: '/tools/pomodoro', title: 'Pomodoro Timer', description: 'Productivity workflow tool', icon: createIcon(Timer), category: 'Security', isNew: true },
   { id: 'pii-scrubber', to: '/tools/pii-scrubber', title: 'PII Scrubber', description: 'Mask emails, names, phones', icon: createIcon(Scissors), category: 'Security', isNew: true },
   { id: 'sql-visualizer', to: '/tools/sql-visualizer', title: 'SQL Schema Visualizer', description: 'CREATE TABLE to ERD diagram', icon: createIcon(Database), category: 'Security', isNew: true },
